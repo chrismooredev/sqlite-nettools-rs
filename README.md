@@ -6,6 +6,8 @@ SQLite3 functions to operate with IPv4 addresses
 Instructions (mostly from extension-functions.c):
 ```
 1) Compile with
+   Windows:
+     cl .\ipv4-ext.c -link -dll -out:ipv4-ext.dll
    Linux:
      gcc -fPIC -lm -shared ipv4-ext.c -o libsqliteipv4.so
    Mac OS X:
