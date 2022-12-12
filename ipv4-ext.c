@@ -280,13 +280,22 @@ sqlite> select isinnet( '123.234.210.109', '123.123.23.18', '255.248.0.0' );
 #if !defined(SQLITE_CORE) || defined(SQLITE_ENABLE_INET)
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <string.h>
-#include <arpa/inet.h>
 #include <stdio.h>
 
 #include <assert.h>
+
+#ifdef __linux__
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#define EXTERNAL
+#elif _WIN32
+#pragma comment(lib, "Ws2_32.lib")
+#include <ws2tcpip.h>
+#define EXTERNAL __declspec(dllexport)
+#endif
 
 #ifndef SQLITE_CORE
   #include "sqlite3ext.h"
@@ -295,9 +304,9 @@ sqlite> select isinnet( '123.234.210.109', '123.123.23.18', '255.248.0.0' );
   #include "sqlite3.h"
 #endif
 
-int netMask(sqlite3_value **argv, int N, u_int32_t* mask) {
+int netMask(sqlite3_value **argv, int N, uint32_t* mask) {
     if ( sqlite3_value_type(argv[N]) == SQLITE_INTEGER && sqlite3_value_int(argv[N]) > 0 && sqlite3_value_int(argv[N]) <= 32 /*sqlite3_value_numeric_type(argv[N]) != SQLITE_INTEGER*/) {
-        *mask = ~ ( (((u_int32_t)1) << (32 - sqlite3_value_int(argv[N]))) -1 );
+        *mask = ~ ( (((uint32_t)1) << (32 - sqlite3_value_int(argv[N]))) -1 );
         return 1;
     } else if (sqlite3_value_type(argv[N]) == SQLITE_TEXT && inet_pton(AF_INET,(char*)sqlite3_value_text(argv[N]),mask) == 1 ) {
         *mask = htonl(*mask);
@@ -306,7 +315,7 @@ int netMask(sqlite3_value **argv, int N, u_int32_t* mask) {
     return 0;
 }
 
-int netLength(sqlite3_value **argv, int N, u_int32_t* mask) {
+int netLength(sqlite3_value **argv, int N, uint32_t* mask) {
     if ( netMask(argv,N, mask) != 1) {
         return 0;
     }
@@ -314,7 +323,7 @@ int netLength(sqlite3_value **argv, int N, u_int32_t* mask) {
     return 1;
 }
 
-int netIpFromAddressStrict(sqlite3_value **argv, int N, u_int32_t* net) {
+int netIpFromAddressStrict(sqlite3_value **argv, int N, uint32_t* net) {
     if( sqlite3_value_type(argv[N]) == SQLITE_NULL || inet_pton(AF_INET,(char*)sqlite3_value_text(argv[N]),net) != 1){
         return 0;
     }
@@ -322,7 +331,7 @@ int netIpFromAddressStrict(sqlite3_value **argv, int N, u_int32_t* net) {
     return 1;
 }
 
-int netIpFromAddress(sqlite3_value **argv, int N, u_int32_t* net) {
+int netIpFromAddress(sqlite3_value **argv, int N, uint32_t* net) {
     char *slashPos, *stringIP;
     int ipLen, retval = 0;
 
@@ -350,7 +359,7 @@ int netIpFromAddress(sqlite3_value **argv, int N, u_int32_t* net) {
     return retval;
 }
 
-int netMaskFromAddress(sqlite3_value **argv, int N, u_int32_t* mask) {
+int netMaskFromAddress(sqlite3_value **argv, int N, uint32_t* mask) {
     char *slashPos;
 
     if( sqlite3_value_type(argv[N]) == SQLITE_NULL ){
@@ -361,13 +370,13 @@ int netMaskFromAddress(sqlite3_value **argv, int N, u_int32_t* mask) {
     slashPos = strchr((char*)sqlite3_value_text(argv[N]), (int) '/');
     if (slashPos == NULL) {
         //  straight ip address without mask
-//        *mask =  (u_int32_t)1;
+//        *mask =  (uint32_t)1;
         return 0;
     } else if ( (strlen(slashPos +1) == 1 && (*mask = atoi(slashPos +1)) != 0) || // one symbol and it's digit
                 (strlen(slashPos +1) == 2 && (*mask = atoi(slashPos +1)) != 0 && *mask > 9) ) { // two symbols and both are digits
         // mask is in hex form
         if (*mask > 0 && *mask <= 32) {
-            *mask = (u_int32_t)-1 << ( 32 - *mask );
+            *mask = (uint32_t)-1 << ( 32 - *mask );
             return 1;
         }
     } else {
@@ -392,7 +401,7 @@ static void isinnet3Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t ad, net, mask;
+	uint32_t ad, net, mask;
 
 	if( netIpFromAddressStrict(argv,0,&ad) != 1 || netIpFromAddressStrict(argv,1,&net) != 1 || netMask(argv,2,&mask) != 1){
 		sqlite3_result_null(context);
@@ -412,7 +421,7 @@ static void isinnet2Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t ad, net, mask;
+    uint32_t ad, net, mask;
 
     // second arg is ip with mask
     if ( netIpFromAddressStrict(argv,0,&ad) != 1 || netMaskFromAddress(argv,1,&mask) != 1 || netIpFromAddress(argv,1,&net) != 1 ) {
@@ -428,7 +437,7 @@ static void issamenet3Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t net1, net2, mask;
+    uint32_t net1, net2, mask;
 
     // two ip addresses without mask
     if ( netIpFromAddressStrict(argv,0,&net1) != 1 || netIpFromAddressStrict(argv,1,&net2) != 1 || netMask(argv,2,&mask) != 1 ) {
@@ -443,7 +452,7 @@ static void ip2intFunc(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t ad;
+    uint32_t ad;
 
     if ( netIpFromAddressStrict(argv,0,&ad) != 1 ) {
         sqlite3_result_null(context);
@@ -457,7 +466,7 @@ static void int2ipFunc(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t ip;
+    uint32_t ip;
     unsigned char ad[32];
 
     if( sqlite3_value_type(argv[0]) == SQLITE_NULL ){
@@ -478,7 +487,7 @@ static void netfrom1Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t net, mask;
+	uint32_t net, mask;
 
     // ip with mask
     if ( netMaskFromAddress(argv,0,&mask) != 1 || netIpFromAddress(argv,0,&net) != 1 ) {
@@ -493,7 +502,7 @@ static void netfrom2Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t net, mask;
+	uint32_t net, mask;
 
     // ip without mask
     if ( netIpFromAddressStrict(argv,0,&net) != 1 || netMask(argv,1,&mask) != 1) {
@@ -509,7 +518,7 @@ static void netlength1Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t mask, net;
+    uint32_t mask, net;
 
     // ip with mask
     if ( netMaskFromAddress(argv,0,&mask) != 1 || netIpFromAddress(argv,0,&net) != 1 ) {
@@ -526,7 +535,7 @@ static void netlength2Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-    u_int32_t net, mask, length;
+    uint32_t net, mask, length;
 
     // ip without mask
     if ( netIpFromAddressStrict(argv,0,&net) != 1 ) {
@@ -547,7 +556,7 @@ static void netmasklengthFunc(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t ad, mask, mask_length;
+	uint32_t ad, mask, mask_length;
 
     if ( (sqlite3_value_type(argv[0]) == SQLITE_TEXT && netMaskFromAddress(argv,0,&mask) == 1 && netIpFromAddress(argv,0,&ad) != 0) ||
          (sqlite3_value_type(argv[0]) == SQLITE_INTEGER && netMask(argv,0,&mask) == 1) ) {
@@ -563,7 +572,7 @@ static void netto1Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t net, mask, mask_length;
+	uint32_t net, mask, mask_length;
 
     // ip with mask
     if ( netMaskFromAddress(argv,0,&mask) != 1 || netIpFromAddress(argv,0,&net) != 1 ) {
@@ -579,7 +588,7 @@ static void netto2Func(
 	int argc,
 	sqlite3_value **argv
 ) {
-	u_int32_t net, mask, mask_length;
+	uint32_t net, mask, mask_length;
 
     // ip without mask
     if ( netIpFromAddressStrict(argv,0,&net) != 1 ) {
@@ -602,7 +611,7 @@ static void netto2Func(
 ** the shared library.
 */
 
-int sqlite3InetInit(sqlite3 *db){
+EXTERNAL int sqlite3InetInit(sqlite3 *db){
   static const struct {
      char *zName;
      signed char nArg;
@@ -628,7 +637,7 @@ int sqlite3InetInit(sqlite3 *db){
   for(i=0; i<sizeof(aFuncs)/sizeof(aFuncs[0]); i++){
     void *pArg;
     int argType = aFuncs[i].argType;
-    pArg = (void*)(int)argType;
+    pArg = (void*)(int)argType; // not needed? sqlite3_user_data is not called to retrieve it
     sqlite3_create_function(db, aFuncs[i].zName, aFuncs[i].nArg,
         aFuncs[i].eTextRep, pArg, aFuncs[i].xFunc, 0, 0);
   }
@@ -637,7 +646,7 @@ int sqlite3InetInit(sqlite3 *db){
 }
 
 #if !SQLITE_CORE
-int sqlite3_extension_init(
+EXTERNAL int sqlite3_extension_init(
   sqlite3 *db, 
   char **pzErrMsg,
   const sqlite3_api_routines *pApi
