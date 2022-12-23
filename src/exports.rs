@@ -26,48 +26,80 @@ pub mod mac {
     fn find_mac(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<(Oui, OuiMeta<&'static str>)>> {
         let Some(s) = ctx.get::<Option<String>>(0)? else { return Ok(None); };
         if s == "" { return Ok(None); }
-        let mac = crate::parse_mac_addr(&s)
+        let mac = crate::oui::parse_mac_addr(&s)
             .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
 
         Ok(crate::oui::EMBEDDED_DB.search_entry(mac))
     }
 
-    /// # MAC_FORMAT(mac) -> mac'
+    /// # MAC_FORMAT(mac, \[NULL|fmt]) -> mac'
     /// Formats a MAC address into a normalized form. Uses `hexstring` format by default.
     /// 
     /// The casing of the format string determines the casing of the output. Mixed-case output is not supported.
     /// 
+    /// Note that prefixing the fmt string with a tilde `~` will make the function use the `hex` format
+    /// when a format is not otherwise found. This can be used to prevent query errors for an invalid
+    /// format type.
+    /// 
+    /// Prefixing the format string with an question mark `?` will make the function emit NULL on a bad MAC address.
+    /// Similarly, this can be used to prevent a query error on a bad MAC address. This effectively allows the function
+    /// to be used to validate a MAC address.
+    /// 
+    /// The format and MAC address validation flags `~`/`?` can be intermixed, and they can be repeated. (Additional flags have no effect)
+    /// 
     /// # Usage
     /// |Call|Result|
     /// |-|-|
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff')`                 | `'aa:bb:cc:dd:ee:ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', NULL)`           | `'aa:bb:cc:dd:ee:ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'hex')`          | `'aa:bb:cc:dd:ee:ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'HEX')`          | `'AA:BB:CC:DD:EE:FF'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'hexstring')`    | `'aa:bb:cc:dd:ee:ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'colon')`        | `'aa:bb:cc:dd:ee:ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'hexadecimal')`  | `'0xaabbccddeeff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'bare')`         | `'aabbccddeeff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'dot')`          | `'aabb.ccdd.eeff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'dash')`         | `'aa-bb-cc-dd-ee-ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'canonical')`    | `'aa-bb-cc-dd-ee-ff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'interface-id')` | `'a8bb:ccff:fedd:eeff'` |
-    /// |`MACFORMAT('aa-bb-cc-dd-ee-ff', 'link-local')`   | `'fe80::a8bb:ccff:fedd:eeff'` |
-    pub fn format(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<String> {
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff')`                 | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', NULL)`           | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'hex')`          | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'HEX')`          | `'AA:BB:CC:DD:EE:FF'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'hexstring')`    | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'colon')`        | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'hexadecimal')`  | `'0xaabbccddeeff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'bare')`         | `'aabbccddeeff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'dot')`          | `'aabb.ccdd.eeff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'dash')`         | `'aa-bb-cc-dd-ee-ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'canonical')`    | `'aa-bb-cc-dd-ee-ff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'interface-id')` | `'a8bb:ccff:fedd:eeff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'link-local')`   | `'fe80::a8bb:ccff:fedd:eeff'` |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', 'de$H')`         | N/A - A query error is raised with an appropriate error message |
+    /// |`MAC_FORMAT('aa-bb-cc-dd-ee-ff', '~de$H')`        | `'aa:bb:cc:dd:ee:ff'` |
+    /// |`MAC_FORMAT('a!-bbkcc-dd2ee-ff', '?dash')`        | `NULL` |
+    /// |`MAC_FORMAT('a!-bbcc-dd2ee-ff', '?~')`            | `NULL` |
+    pub fn format(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<String>> {
         let mac_str: String = ctx.get(0)?;
-        let mac = eui48::MacAddress::parse_str(&mac_str)
-            .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
 
         let mut raw_fmt = (ctx.len() == 2).then(|| ctx.get::<Option<String>>(1)).transpose()?.flatten();
         let mut has_upper = false;
+        let mut use_default_on_bad_fmt = false;
+        let mut ret_null_on_bad_mac = false;
         if let Some(fmt) = raw_fmt.as_mut() {
+            loop {
+                if fmt.starts_with('~') {
+                    fmt.remove(0);
+                    use_default_on_bad_fmt = true;
+                } else if fmt.starts_with('?') {
+                    fmt.remove(0);
+                    ret_null_on_bad_mac = true;
+                } else {
+                    break;
+                }
+            }
             has_upper = fmt.contains(|c: char| c.is_ascii_uppercase());
             let has_lower = fmt.contains(|c: char| c.is_ascii_lowercase());
-            if has_upper && has_lower {
+            if has_upper && has_lower && !use_default_on_bad_fmt {
                 return Err(rusqlite::Error::UserFunctionError(Box::new(MacFormatError::MixedCaseFmtSpecifier)));
             }
             fmt.make_ascii_lowercase();
         }
+
+        let mac = match crate::oui::parse_mac_addr(&mac_str) {
+            Ok(m) => m,
+            Err(_) if ret_null_on_bad_mac => return Ok(None),
+            Err(e) => return Err(rusqlite::Error::UserFunctionError(Box::new(e))),
+        };
+
         let mut formatted = match raw_fmt.as_ref().map(String::as_str) {
             None | Some("") | Some("hex") | Some("hexstring") | Some("colon") => mac.to_hex_string(),
             Some("hexadecimal") => mac.to_hexadecimal(),
@@ -76,10 +108,11 @@ pub mod mac {
             Some("canonical") | Some("dash") => mac.to_canonical(),
             Some("interface-id") => mac.to_interfaceid(),
             Some("link-local") => mac.to_link_local(),
+            _ if use_default_on_bad_fmt => mac.to_hex_string(),
             _ => return Err(rusqlite::Error::UserFunctionError(Box::new(MacFormatError::BadFmtSpecifier(raw_fmt.unwrap()))))
         };
         if has_upper { formatted.make_ascii_uppercase(); }
-        Ok(formatted)
+        Ok(Some(formatted))
     }
 
     /// # MAC_PREFIX(NULL|mac) -> NULL|oui
@@ -148,7 +181,7 @@ pub mod mac {
                 Some(s) => s,
             };
 
-            let mac = crate::parse_mac_addr(&mac_str)
+            let mac = crate::oui::parse_mac_addr(&mac_str)
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
             Ok(Some(mac.$fname()))
         }}
