@@ -396,7 +396,7 @@ int netMaskFromAddress(sqlite3_value **argv, int N, uint32_t* mask) {
  * isinnet( '172.16.1.23', '172.16.1.0', '18' )
  * isinnet( '172.16.1.23', '172.16.1.0', '255.255.192.0' )
  */
-static void isinnet3Func(
+EXTERNAL void isinnet3Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -416,7 +416,7 @@ static void isinnet3Func(
  * isinnet( '172.16.1.23', '172.16.1.0/18' )
  * isinnet( '172.16.1.23', '172.16.1.0/255.255.192.0' )
  */
-static void isinnet2Func(
+EXTERNAL void isinnet2Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -432,7 +432,7 @@ static void isinnet2Func(
     sqlite3_result_int( context, ((ad & mask) == net) );
 }
 
-static void issamenet3Func(
+EXTERNAL void issamenet3Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -447,7 +447,7 @@ static void issamenet3Func(
     sqlite3_result_int( context, ((net1 & mask) == (net2 & mask)) );
 }
 
-static void ip2intFunc(
+EXTERNAL void ip2intFunc(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -461,7 +461,7 @@ static void ip2intFunc(
     sqlite3_result_int64( context, ad );
 }
 
-static void int2ipFunc(
+EXTERNAL void int2ipFunc(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -482,7 +482,7 @@ static void int2ipFunc(
     sqlite3_result_text( context, (char*)ad, -1, SQLITE_TRANSIENT);
 }
 
-static void netfrom1Func(
+EXTERNAL void netfrom1Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -497,7 +497,7 @@ static void netfrom1Func(
 	sqlite3_result_int64( context, (net & mask) );
 }
 
-static void netfrom2Func(
+EXTERNAL void netfrom2Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -513,7 +513,7 @@ static void netfrom2Func(
 }
 
 
-static void netlength1Func(
+EXTERNAL void netlength1Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -530,7 +530,7 @@ static void netlength1Func(
 }
 
 // first arg is checked but ignored
-static void netlength2Func(
+EXTERNAL void netlength2Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -551,7 +551,7 @@ static void netlength2Func(
     sqlite3_result_int64( context, length );
 }
 
-static void netmasklengthFunc(
+EXTERNAL void netmasklengthFunc(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -567,7 +567,7 @@ static void netmasklengthFunc(
     sqlite3_result_null(context);
 }
 
-static void netto1Func(
+EXTERNAL void netto1Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
@@ -583,7 +583,7 @@ static void netto1Func(
 	sqlite3_result_int64( context, (net & mask) + mask_length - 1 );
 }
 
-static void netto2Func(
+EXTERNAL void netto2Func(
 	sqlite3_context *context,
 	int argc,
 	sqlite3_value **argv
