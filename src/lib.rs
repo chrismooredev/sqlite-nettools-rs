@@ -54,10 +54,10 @@ unsafe extern "C" fn sqlite3_extension_init(db: *mut ffi::sqlite3, errmsg: *mut 
 
     match register_scalar_funcs(&dbconn) {
         Ok(()) => {
-            return ffi::SQLITE_OK;
+            ffi::SQLITE_OK
         },
         Err(e) => {
-            eprintln!("Unable to register extension functions for sqlite3-inet: {}", e);
+            eprintln!("Unable to register extension functions for sqlite3-inet: {e}");
 
             let upper_err = CString::new(e.to_string()).unwrap();
 
@@ -70,7 +70,7 @@ unsafe extern "C" fn sqlite3_extension_init(db: *mut ffi::sqlite3, errmsg: *mut 
             *errmsg = (func)("Unable to register extension functions for sqlite3-inet: %s\0".as_ptr() as *const i8, upper_err.as_ptr() as *const i8);
 
             // SQLITE should de-alloc the memory with sqlite3_free
-            return ffi::SQLITE_ERROR;
+            ffi::SQLITE_ERROR
         }
     }
 }

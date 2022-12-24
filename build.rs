@@ -11,5 +11,5 @@ fn main() {
     let out_dir = std::env::var_os("OUT_DIR").unwrap();
     let db_path = Path::new(&out_dir).join("wireshark_oui_db.txt");
 
-    std::fs::write(&db_path, &db_data).expect("unable to write wireshark db file");
+    std::fs::write(db_path, db_data).expect("unable to write wireshark db file");
 }

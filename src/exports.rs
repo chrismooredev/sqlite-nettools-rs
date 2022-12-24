@@ -27,8 +27,8 @@ pub mod mac {
 
     fn find_mac(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<(Oui, OuiMeta<&'static str>)>> {
         let Some(s) = ctx.get_raw(0).as_str_or_null()? else { return Ok(None); };
-        if s == "" { return Ok(None); }
-        let mac = crate::oui::parse_mac_addr(&s)
+        if s.is_empty() { return Ok(None); }
+        let mac = crate::oui::parse_mac_addr(s)
             .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
 
         Ok(crate::oui::EMBEDDED_DB.search_entry(mac))
@@ -112,7 +112,7 @@ pub mod mac {
             };
         }
 
-        let mac = match crate::oui::parse_mac_addr(&mac_str) {
+        let mac = match crate::oui::parse_mac_addr(mac_str) {
             Ok(m) => m,
             Err(_) if ret_null_on_bad_mac => return Ok(None),
             Err(e) => return Err(rusqlite::Error::UserFunctionError(Box::new(e))),
@@ -134,7 +134,7 @@ pub mod mac {
     /// |`MAC_PREFIX('33-33-00-00-00-01')` | `NULL`  |
     pub fn prefix(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<String>> {
         let mac = find_mac(ctx)?;
-        Ok(mac.map(|(o, _om)| format!("{:?}", o)))
+        Ok(mac.map(|(oui, _om)| format!("{oui:?}")))
     }
 
     /// # MAC_MANUF(NULL|mac) -> NULL|manuf
@@ -235,9 +235,8 @@ pub fn in_subnet(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<boo
     let network = match args {
         2 => {
             let network_raw: String = ctx.get(1).unwrap();
-            let network = ipnet::IpNet::from_str(&network_raw)
-                .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
-            network
+            ipnet::IpNet::from_str(&network_raw)
+                .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
         },
         3 => {
             let netaddr_raw: String = ctx.get(1).unwrap();
@@ -246,12 +245,11 @@ pub fn in_subnet(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<boo
             let netmask_raw: String = ctx.get(2).unwrap();
             let netmask: IpAddr = netmask_raw.parse()
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
-            let network = IpNet::with_netmask(netaddr, netmask)
-                .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
-            network
+            IpNet::with_netmask(netaddr, netmask)
+                .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
         },
         n => unreachable!("we only register 2 and 3 arg variants - got {} args", n)
     };
 
-    Ok(network.contains(&ipaddr))
+    Ok(network?.contains(&ipaddr))
 }

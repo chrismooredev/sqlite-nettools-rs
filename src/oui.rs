@@ -88,8 +88,8 @@ impl OuiMeta<String> {
     pub fn as_ref(&self) -> OuiMeta<&'_ str> {
         OuiMeta {
             short: self.short.as_str(),
-            long: self.long.as_ref().map(String::as_str),
-            comment: self.comment.as_ref().map(String::as_str),
+            long: self.long.as_deref(),
+            comment: self.comment.as_deref(),
         }
     }
 }
@@ -149,7 +149,7 @@ impl Oui {
     /// 
     /// Returns Err(ParseOuiError::InvalidIntegerValue(_)) if the address is over 0x0000FFFF_FFFFFF
     pub fn from_int(address: u64) -> Result<Oui, ParseOuiError> {
-        if address > 0x0000FFFF_FFFFFFFF {
+        if address > 0x0000_FFFF_FFFF_FFFF {
             return Err(ParseOuiError::InvalidIntegerValue(address))
         }
         Ok(Oui { address, length: 6*8 })
@@ -168,7 +168,7 @@ impl FromStr for Oui {
             }
         };
 
-        if length < 24 || length > 48 {
+        if !(24..=48).contains(&length) {
             return Err(ParseOuiError::PrefixLengthValue(length, s.to_owned()))
         }
 
@@ -256,9 +256,7 @@ impl OuiDb {
         let mut v: Vec<(Oui, OuiMeta<String>)> = txt.split('\n')
             .enumerate()
             .map(|(lnum, l)| (lnum, l.trim()))
-            .filter(|(_, l)| {
-                l.len() > 0 && !l.starts_with('#')
-            })
+            .filter(|(_, l)| !(l.is_empty() || l.starts_with('#')))
             .map(|(lnum, l)| {
                 let mut _fields = [""; 8];
                 let fields: &[&str] = {
@@ -301,9 +299,9 @@ impl OuiDb {
         //     .enumerate()
         //     .map(|(i, (o, om))| format!("{:>05}\t{:>012x}/{}\t{:?}\t{:?}\n", i, o.address, o.length, o, om))
         //     .collect();
-        // std::fs::write("oui_db_dump2.txt", dbg_str).unwrap();
+        // std::fs::write("oui_db_dump.txt", dbg_str).unwrap();
 
-        return Ok(OuiDb(v));
+        Ok(OuiDb(v))
     }
 
     pub fn search_entry(&self, mac: MacAddress) -> Option<(Oui, OuiMeta<&str>)> {
