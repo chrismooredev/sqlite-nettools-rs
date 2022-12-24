@@ -10,6 +10,8 @@ use std::{str::FromStr, num::ParseIntError, fmt};
 
 use eui48::{MacAddress, EUI48LEN};
 
+use crate::mac::MacStyle;
+
 #[derive(thiserror::Error, Debug)]
 pub enum ParseMacError {
     #[error("MAC address has a bad character length: {0:?}")]
@@ -52,11 +54,7 @@ pub fn parse_mac_addr_extend(mut s: &str, zero_extend: bool) -> Result<eui48::Ma
 
     let mac_int: u64 = u64::from_str_radix(raw.as_str(), 16).expect("prevalidated that all chars are hexidecimal");
 
-    let mac_raw_long = u64::to_be_bytes(mac_int);
-    let mut mac_raw = [0u8; 6];
-    mac_raw.copy_from_slice(&mac_raw_long[2..]);
-
-    return Ok(eui48::MacAddress::new(mac_raw))
+    Ok(Oui::from_int(mac_int).unwrap().as_mac())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +101,8 @@ pub enum ParseOuiError {
     PrefixLengthParsing(#[source] ParseIntError, String),
     #[error("Parsed an invalid OUI prefix length. Expected values are within range [24, 48]. Got {1} from source prefix {0:?}")]
     PrefixLengthValue(u8, String),
+    #[error("Attempted to create an OUI/MAC address from a 64-bit integer, but value was out of range. Got 0x{0:>016x}")]
+    InvalidIntegerValue(u64)
 }
 
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
@@ -111,9 +111,16 @@ pub struct Oui {
     length: u8,
 }
 impl Oui {
-    fn mask(&self) -> u64 {
+    pub fn as_mac(self) -> MacAddress {
+        let mac_raw_long = u64::to_be_bytes(self.address);
+        let mut mac_raw = [0u8; 6];
+        mac_raw.copy_from_slice(&mac_raw_long[2..]);
+        MacAddress::new(mac_raw)
+    }
+    pub fn mask(&self) -> u64 {
         ((1 << self.length) - 1) << (8*EUI48LEN - self.length as usize)
     }
+
     pub fn contains(&self, other: &Oui) -> bool {
         // eprintln!("Oui::contains({:?}, {:?} (self mask: {:b}))", self, other, self.mask());
         if self.length > other.length {
@@ -121,12 +128,30 @@ impl Oui {
         }
         other.address & self.mask() == self.address
     }
+
     pub fn from_addr(mac: MacAddress) -> Oui {
         let mut mac_bytes = [0u8; 8];
         mac_bytes[2..].copy_from_slice(mac.as_bytes());
         let mac_int = u64::from_be_bytes(mac_bytes);
         // eprintln!("\n[src/oui.rs:62] mac={:?}, mac_bytes={:?}, mac_int={:>012x}", mac_bytes, mac, mac_int);
         Oui { address: mac_int, length: 48 }
+    }
+
+    /// Returns the MAC address as a u64.
+    /// 
+    /// This places the address in the least significant digits: `aa:bb:cc:dd:ee:ff` would be `0x0000aabbccddeeff`
+    pub fn as_int(&self) -> u64 {
+        self.address
+    }
+
+    /// Converts a 64-bit integer into a structured OUI with a length of 48 bits.
+    /// 
+    /// Returns Err(ParseOuiError::InvalidIntegerValue(_)) if the address is over 0x0000FFFF_FFFFFF
+    pub fn from_int(address: u64) -> Result<Oui, ParseOuiError> {
+        if address > 0x0000FFFF_FFFFFFFF {
+            return Err(ParseOuiError::InvalidIntegerValue(address))
+        }
+        Ok(Oui { address, length: 6*8 })
     }
 }
 impl FromStr for Oui {
@@ -160,21 +185,35 @@ impl FromStr for Oui {
 }
 impl fmt::Debug for Oui {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mac_bytes_all = u64::to_be_bytes(self.address);
-        let mac_bytes = &mac_bytes_all[2..];
-        // eprintln!("[src/oui.rs:92] mac_bytes={:?}, oui.address={:>012x}, oui.length={}", mac_bytes, self.address, self.length);
-        match self.length {
-            24 => f.write_fmt(format_args!(
-                "{:02x}:{:02x}:{:02x}",
-                mac_bytes[0], mac_bytes[1], mac_bytes[2],
-            )),
-            _ => f.write_fmt(format_args!(
-                "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}/{}",
-                mac_bytes[0], mac_bytes[1], mac_bytes[2], mac_bytes[3], mac_bytes[4], mac_bytes[5],
-                self.length,
-            )),
+        let formatted = MacStyle::Colon.format(self.as_mac(), false);
+        let fstr = formatted.as_str();
+
+        // alternate flag signals to always use extended form
+        match (self.length, f.alternate()) {
+            (24, false) => f.write_str(&fstr[..8]),
+            _ => f.write_fmt(format_args!("{}/{}", fstr, self.length)),
         }
     }
+}
+
+#[test]
+fn check_smallstr_size() {
+    use smallstr::SmallString;
+
+    // this test is kept more as a reminder that these aren't 'free'
+    // a String's main node is 3*WORDSIZE + ALLOCATION
+    // for a 14B MAC on 64-bit CPU, that would be ~38 bytes, assuming no alloc padding
+
+    // the advantage of this approach is data locality - smallstring
+    // keeps the data on the stack, along with other local data
+    // so there isn't need to randomly access memory for heap, etc
+    
+    // let's keep those caches hot, folks
+
+    assert_eq!(32, std::mem::size_of::<SmallString<[u8; 14]>>());
+    assert_eq!(32, std::mem::size_of::<SmallString<[u8; 17]>>());
+    assert_eq!(32, std::mem::size_of::<SmallString<[u8; 19]>>());
+    assert_eq!(40, std::mem::size_of::<SmallString<[u8; 25]>>());
 }
 
 /// In-memory OUI prefix database

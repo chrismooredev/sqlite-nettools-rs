@@ -1,34 +1,11 @@
 
-use std::{ffi::{CStr, CString}, slice::SliceIndex, net::IpAddr, str::FromStr};
-use ipnet::IpNet;
-use rusqlite::{ffi, functions::{FunctionFlags, Context}, Connection, types::ValueRef};
+use std::ffi::CString;
+use rusqlite::{ffi, functions::FunctionFlags, Connection};
 
 pub mod exports;
+pub mod mac;
 pub mod oui;
 // pub mod vtab_oui;
-
-// #[link(name="ipv4-ext", kind="dylib")]
-// extern "C" {
-//     fn ip2intFunc(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn int2ipFunc(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netfrom1Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netfrom2Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netto1Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netto2Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netlength1Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netlength2Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn netmasklengthFunc(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn isinnet3Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn isinnet2Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-//     fn issamenet3Func(context: *mut ffi::sqlite3_context, argc: std::ffi::c_int, argv: *mut *mut ffi::sqlite3_value);
-// }
-
-
-macro_rules! cstr {
-    ($s: literal) => {
-        unsafe { CStr::from_bytes_with_nul_unchecked(concat!($s, "\0").as_bytes()) }
-    }
-}
 
 // const FUNCS: &[FunctionDescription] = &[
 //     FunctionDescription::new(cstr!("ip2int"),        1, 0, true, ip2intFunc),
@@ -61,7 +38,6 @@ fn register_scalar_funcs(dbconn: &Connection) -> rusqlite::Result<()> {
     dbconn.create_scalar_function("MAC_ISMULTICAST", 1, flags, exports::mac::is_multicast)?;
     dbconn.create_scalar_function("MAC_ISUNIVERSAL", 1, flags, exports::mac::is_universal)?;
     dbconn.create_scalar_function("MAC_ISLOCAL",     1, flags, exports::mac::is_local)?;
-    // OUIMATCHES
 
     // eprintln!("scalar funcs: done");
     Ok(())
