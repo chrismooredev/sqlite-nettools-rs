@@ -26,7 +26,7 @@ pub mod mac {
     }
 
     fn find_mac(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<(Oui, OuiMeta<&'static str>)>> {
-        let Some(s) = ctx.get::<Option<String>>(0)? else { return Ok(None); };
+        let Some(s) = ctx.get_raw(0).as_str_or_null()? else { return Ok(None); };
         if s == "" { return Ok(None); }
         let mac = crate::oui::parse_mac_addr(&s)
             .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;

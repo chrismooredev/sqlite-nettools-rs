@@ -1,5 +1,5 @@
 [package]
-name = "sqlite3-inet"
+name = "sqlite3-nettools"
 version = "0.1.0"
 edition = "2021"
 
@@ -15,6 +15,7 @@ eui48 = "1.1.0"
 thiserror = "1.0"
 smallstr = "0.3.0"
 
+# main rusqlite project doesn't yet have support for authoring loadable extensions
 [dependencies.rusqlite]
 package = "rusqlite"
 git = "https://github.com/litements/rusqlite/"

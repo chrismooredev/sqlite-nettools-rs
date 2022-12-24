@@ -42,6 +42,7 @@ pub fn parse_mac_addr_extend(mut s: &str, zero_extend: bool) -> Result<eui48::Ma
     }
 
     if zero_extend {
+        // fill in the end if we were only given the front (like parsing an OUI/prefix)
         const ZEROS: [char; 12] = ['0'; 12];
         raw.extend(&ZEROS[raw.len()..]);
     }
@@ -296,11 +297,11 @@ impl OuiDb {
             }
         }
 
-        let dbg_str: String = v.iter()
-            .enumerate()
-            .map(|(i, (o, om))| format!("{:>05}\t{:>012x}/{}\t{:?}\t{:?}\n", i, o.address, o.length, o, om))
-            .collect();
-        std::fs::write("oui_db_dump2.txt", dbg_str).unwrap();
+        // let dbg_str: String = v.iter()
+        //     .enumerate()
+        //     .map(|(i, (o, om))| format!("{:>05}\t{:>012x}/{}\t{:?}\t{:?}\n", i, o.address, o.length, o, om))
+        //     .collect();
+        // std::fs::write("oui_db_dump2.txt", dbg_str).unwrap();
 
         return Ok(OuiDb(v));
     }
@@ -308,7 +309,7 @@ impl OuiDb {
     pub fn search_entry(&self, mac: MacAddress) -> Option<(Oui, OuiMeta<&str>)> {
         let as_oui = Oui::from_addr(mac);
         // eprintln!("searching MAC {:?} with OUI {:?}", mac, as_oui);
-        let base_i = match self.0.binary_search_by_key(&as_oui, |(o, om)| *o) {
+        let base_i = match self.0.binary_search_by_key(&as_oui, |(o, _om)| *o) {
             Ok(i) => i, // exact match
             Err(i) => {
                 // should be n-above our desired entry
