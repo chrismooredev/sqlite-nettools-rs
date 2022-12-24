@@ -20,7 +20,7 @@ pub enum ParseMacError {
     InvalidCharacter(String, char),
 }
 
-// rolling our own parsing - the built-in mac addr parsing from the eui48 crate is too slow.
+// rolling our own parsing - the built-in mac addr parsing from the eui48 crate is way too slow for DB use.
 // see: https://github.com/abaumhauer/eui48/pull/32
 // note that our mac addr zero-extension logic wouldn't port over into that PR too well, so use homegrown
 

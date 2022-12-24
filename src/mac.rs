@@ -198,7 +198,6 @@ impl MacStyle {
     }
 }
 
-
 pub fn format_mac_dashed(mac: MacAddress) -> SmallString<[u8; 25]> {
     MacStyle::Plain.format(mac, true)
 }

@@ -2,10 +2,14 @@
 use std::ffi::CString;
 use rusqlite::{ffi, functions::FunctionFlags, Connection};
 
+/// Main collection of functions exported to SQLite. Also acts as documentation for those functions.
 pub mod exports;
+
+/// Non-alloc MAC address formatting
 pub mod mac;
+
+/// OUI database and lookup
 pub mod oui;
-// pub mod vtab_oui;
 
 // const FUNCS: &[FunctionDescription] = &[
 //     FunctionDescription::new(cstr!("ip2int"),        1, 0, true, ip2intFunc),
