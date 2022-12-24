@@ -1,4 +1,4 @@
-use std::{str::FromStr, num::ParseIntError, fmt};
+use std::{fmt, num::ParseIntError, str::FromStr};
 
 // The default rust 'oui' crate doesn't search efficiently, and we can't use it memory-optimized ways.
 //
@@ -27,16 +27,21 @@ pub enum ParseMacError {
 pub fn parse_mac_addr(s: &str) -> Result<eui48::MacAddress, ParseMacError> {
     parse_mac_addr_extend(s, false)
 }
-pub fn parse_mac_addr_extend(mut s: &str, zero_extend: bool) -> Result<eui48::MacAddress, ParseMacError> {
+pub fn parse_mac_addr_extend(
+    mut s: &str,
+    zero_extend: bool,
+) -> Result<eui48::MacAddress, ParseMacError> {
     let mut raw = smallstr::SmallString::<[u8; 12]>::new();
-    if s.starts_with("0x") { s = &s[2..]; }
+    if s.starts_with("0x") {
+        s = &s[2..];
+    }
     for c in s.chars() {
         if matches!(c, 'A'..='F' | 'a'..='f' | '0'..='9') {
             if raw.len() + 1 > raw.capacity() {
                 return Err(ParseMacError::InvalidLength(s.to_owned()));
             }
             raw.push(c);
-        } else if ! matches!(c, '-' | '.' | ':') {
+        } else if !matches!(c, '-' | '.' | ':') {
             return Err(ParseMacError::InvalidCharacter(s.to_owned(), c));
         }
     }
@@ -53,7 +58,8 @@ pub fn parse_mac_addr_extend(mut s: &str, zero_extend: bool) -> Result<eui48::Ma
 
     debug_assert_eq!(raw.len(), 12);
 
-    let mac_int: u64 = u64::from_str_radix(raw.as_str(), 16).expect("prevalidated that all chars are hexidecimal");
+    let mac_int: u64 =
+        u64::from_str_radix(raw.as_str(), 16).expect("prevalidated that all chars are hexidecimal");
 
     Ok(Oui::from_int(mac_int).unwrap().as_mac())
 }
@@ -103,7 +109,7 @@ pub enum ParseOuiError {
     #[error("Parsed an invalid OUI prefix length. Expected values are within range [24, 48]. Got {1} from source prefix {0:?}")]
     PrefixLengthValue(u8, String),
     #[error("Attempted to create an OUI/MAC address from a 64-bit integer, but value was out of range. Got 0x{0:>016x}")]
-    InvalidIntegerValue(u64)
+    InvalidIntegerValue(u64),
 }
 
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
@@ -119,7 +125,7 @@ impl Oui {
         MacAddress::new(mac_raw)
     }
     pub fn mask(&self) -> u64 {
-        ((1 << self.length) - 1) << (8*EUI48LEN - self.length as usize)
+        ((1 << self.length) - 1) << (8 * EUI48LEN - self.length as usize)
     }
 
     pub fn contains(&self, other: &Oui) -> bool {
@@ -135,24 +141,30 @@ impl Oui {
         mac_bytes[2..].copy_from_slice(mac.as_bytes());
         let mac_int = u64::from_be_bytes(mac_bytes);
         // eprintln!("\n[src/oui.rs:62] mac={:?}, mac_bytes={:?}, mac_int={:>012x}", mac_bytes, mac, mac_int);
-        Oui { address: mac_int, length: 48 }
+        Oui {
+            address: mac_int,
+            length: 48,
+        }
     }
 
     /// Returns the MAC address as a u64.
-    /// 
+    ///
     /// This places the address in the least significant digits: `aa:bb:cc:dd:ee:ff` would be `0x0000aabbccddeeff`
     pub fn as_int(&self) -> u64 {
         self.address
     }
 
     /// Converts a 64-bit integer into a structured OUI with a length of 48 bits.
-    /// 
+    ///
     /// Returns Err(ParseOuiError::InvalidIntegerValue(_)) if the address is over 0x0000FFFF_FFFFFF
     pub fn from_int(address: u64) -> Result<Oui, ParseOuiError> {
         if address > 0x0000_FFFF_FFFF_FFFF {
-            return Err(ParseOuiError::InvalidIntegerValue(address))
+            return Err(ParseOuiError::InvalidIntegerValue(address));
         }
-        Ok(Oui { address, length: 6*8 })
+        Ok(Oui {
+            address,
+            length: 6 * 8,
+        })
     }
 }
 impl FromStr for Oui {
@@ -160,16 +172,15 @@ impl FromStr for Oui {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (oui, length) = match s.split_once('/') {
             None => (s, 24),
-            Some((oui, slen)) => {
-                (
-                    oui,
-                    slen.parse::<u8>().map_err(|e| ParseOuiError::PrefixLengthParsing(e, s.to_owned()))?
-                )
-            }
+            Some((oui, slen)) => (
+                oui,
+                slen.parse::<u8>()
+                    .map_err(|e| ParseOuiError::PrefixLengthParsing(e, s.to_owned()))?,
+            ),
         };
 
         if !(24..=48).contains(&length) {
-            return Err(ParseOuiError::PrefixLengthValue(length, s.to_owned()))
+            return Err(ParseOuiError::PrefixLengthValue(length, s.to_owned()));
         }
 
         let oui_mac = parse_mac_addr_extend(oui, true).unwrap();
@@ -208,7 +219,7 @@ fn check_smallstr_size() {
     // the advantage of this approach is data locality - smallstring
     // keeps the data on the stack, along with other local data
     // so there isn't need to randomly access memory for heap, etc
-    
+
     // let's keep those caches hot, folks
 
     assert_eq!(32, std::mem::size_of::<SmallString<[u8; 14]>>());
@@ -218,7 +229,7 @@ fn check_smallstr_size() {
 }
 
 /// In-memory OUI prefix database
-/// 
+///
 /// Lookups should generally be O(log n), as we perform a binary search to locate an OUI prefix, when given a username
 #[derive(Debug, Clone)]
 pub struct OuiDb(Vec<(Oui, OuiMeta<String>)>);
@@ -235,7 +246,7 @@ pub enum ParseOuiDbError {
     OuiParsing(usize, #[source] ParseOuiError, String),
     #[error("invalid number of fields in oui db record, expected [2, 4] got {1} (line {0}: {2:?})")]
     BadFieldCount(usize, usize, String),
-    
+
     #[cfg(debug_assertions)]
     #[error("entries with duplicate prefix's exist within the OUI database")]
     DuplicatedEntries,
@@ -243,17 +254,19 @@ pub enum ParseOuiDbError {
 
 impl OuiDb {
     /// The latest copy of Wireshark's OUI database at compile time.
-    /// 
+    ///
     /// Latest copy is available here: https://gitlab.com/wireshark/wireshark/raw/master/manuf
-    pub const WIRESHARK_OUI_DB_EMBEDDED: &str = include_str!(concat!(env!("OUT_DIR"), "/wireshark_oui_db.txt"));
+    pub const WIRESHARK_OUI_DB_EMBEDDED: &str =
+        include_str!(concat!(env!("OUT_DIR"), "/wireshark_oui_db.txt"));
 
     // TODO: pub fn parse_from_reader<R: BufRead>(txt: R) -> Result<OuiDb, DbParsingError>
 
     /// Parse a file in the format of Wireshark's OUI database into memory.
-    /// 
+    ///
     /// Wireshark's reference OUI database can be found here: https://gitlab.com/wireshark/wireshark/raw/master/manuf
     pub fn parse_from_string(txt: &str) -> Result<OuiDb, ParseOuiDbError> {
-        let mut v: Vec<(Oui, OuiMeta<String>)> = txt.split('\n')
+        let mut v: Vec<(Oui, OuiMeta<String>)> = txt
+            .split('\n')
             .enumerate()
             .map(|(lnum, l)| (lnum, l.trim()))
             .filter(|(_, l)| !(l.is_empty() || l.starts_with('#')))
@@ -261,30 +274,45 @@ impl OuiDb {
                 let mut _fields = [""; 8];
                 let fields: &[&str] = {
                     let mut len = 0;
-                    l.split('\t').filter(|f| f.len() > 1)
+                    l.split('\t')
+                        .filter(|f| f.len() > 1)
                         .enumerate()
                         .for_each(|(i, part)| {
-                            len = i+1;
+                            len = i + 1;
                             _fields[i] = part.trim();
                         });
                     &_fields[..len]
                 };
-                if ! (2..=4).contains(&fields.len()) {
-                    return Err(ParseOuiDbError::BadFieldCount(lnum, fields.len(), l.to_owned()));
+                if !(2..=4).contains(&fields.len()) {
+                    return Err(ParseOuiDbError::BadFieldCount(
+                        lnum,
+                        fields.len(),
+                        l.to_owned(),
+                    ));
                 }
-                let ouispec: Oui = fields[0].parse()
+                let ouispec: Oui = fields[0]
+                    .parse()
                     .map_err(|e| ParseOuiDbError::OuiParsing(lnum, e, l.to_owned()))?;
                 let short = fields[1];
                 let long = fields.get(2).copied();
                 let comment = fields.get(3).map(|s| s.trim_matches('#').trim());
-                Ok((ouispec, OuiMeta { short, long, comment }.to_owned()))
+                Ok((
+                    ouispec,
+                    OuiMeta {
+                        short,
+                        long,
+                        comment,
+                    }
+                    .to_owned(),
+                ))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
         // sort it for binary searching later
         v.sort_by_key(|(k, _v)| *k);
 
-        #[cfg(debug_assertions)] {
+        #[cfg(debug_assertions)]
+        {
             // no need to error on this if running in release mode
             // the sourced DB shouldn't have any and it's not worth erroring over anyway
             // this is primarily for diagnostics
@@ -314,8 +342,8 @@ impl OuiDb {
                 // should /be/ our desired entry if the prefix is long
                 // may have to iterate towards zero if we are within a longer prefix, and must match for the parent prefix
                 // subtract zero to go to the lower end of our match
-                i-1
-            },
+                i - 1
+            }
         };
         let mut i = base_i;
 
@@ -324,7 +352,7 @@ impl OuiDb {
             if o.contains(&as_oui) {
                 // this is our prefix
                 return Some((*o, om.as_ref()));
-            } else if ! o.contains(&as_oui) && o.length <= 24 {
+            } else if !o.contains(&as_oui) && o.length <= 24 {
                 // we reached a top-level-prefix (/24) that doesn't contain us - we have none
                 return None;
             } else {
@@ -335,8 +363,7 @@ impl OuiDb {
     }
 
     pub fn raw_prefixes(&self) -> impl Iterator<Item = (Oui, OuiMeta<&str>)> {
-        self.0.iter()
-            .map(|(o, om)| (*o, om.as_ref()))
+        self.0.iter().map(|(o, om)| (*o, om.as_ref()))
     }
     pub fn search_prefix(&self, mac: MacAddress) -> Option<Oui> {
         self.search_entry(mac).map(|(p, _)| p)
@@ -361,7 +388,8 @@ fn embedded_db_builds() {
 fn match_no_long_name() {
     // 00:00:17	Oracle
     let mac = parse_mac_addr("00:00:17:aa:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "Oracle",
             long: None,
@@ -374,7 +402,8 @@ fn match_no_long_name() {
 fn match_prefix_zeros() {
     // 00:00:17	Oracle
     let mac = parse_mac_addr("00:00:00:00:00:00").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "00:00:00",
             long: Some("Officially Xerox, but 0:0:0:0:0:0 is more common"),
@@ -387,7 +416,8 @@ fn match_prefix_zeros() {
 fn match_prefix_exact() {
     // 2C:23:3A	HewlettP	Hewlett Packard
     let mac = parse_mac_addr("2c:23:3a:00:00:00").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "HewlettP",
             long: Some("Hewlett Packard"),
@@ -400,7 +430,8 @@ fn match_prefix_exact() {
 fn match_prefix_basic() {
     // 2C:23:3A	HewlettP	Hewlett Packard
     let mac = parse_mac_addr("2c:23:3a:aa:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "HewlettP",
             long: Some("Hewlett Packard"),
@@ -409,12 +440,12 @@ fn match_prefix_basic() {
     );
 }
 
-
 #[test]
 fn match_prefix_extended() {
     // 8C:47:6E:30:00:00/28	Shanghai	Shanghai Satellite Communication Technology Co.,Ltd
     let mac = parse_mac_addr("8c:47:6e:3a:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "Shanghai",
             long: Some("Shanghai Satellite Communication Technology Co.,Ltd"),
@@ -427,7 +458,8 @@ fn match_prefix_extended() {
 fn match_commented() {
     // 08:00:87	XyplexTe	Xyplex	# terminal servers
     let mac = parse_mac_addr("08:00:87:aa:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "XyplexTe",
             long: Some("Xyplex"),
@@ -440,7 +472,8 @@ fn match_commented() {
 fn match_unicode() {
     // 8C:1F:64:CB:20:00/36	DyncirSo	Dyncir Soluções Tecnológicas Ltda
     let mac = parse_mac_addr("8c:1f:64:cb:2b:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "DyncirSo",
             long: Some("Dyncir Soluções Tecnológicas Ltda"),
@@ -454,7 +487,8 @@ fn resolve_mac_to_superprefix_when_missing_subprefix() {
     // 2C:27:9E	IEEERegi	IEEE Registration Authority
     // is split into /28, without a 2C:27:9E:F0:00:00/28 member
     let mac = parse_mac_addr("2c:27:9e:fa:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
+    assert_eq!(
+        EMBEDDED_DB.search(mac),
         Some(OuiMeta {
             short: "IEEERegi",
             long: Some("IEEE Registration Authority"),
@@ -468,7 +502,5 @@ fn match_none() {
     // B0:C5:59	SamsungE	Samsung Electronics Co.,Ltd
     // B0:C5:CA	IEEERegi	IEEE Registration Authority
     let mac = parse_mac_addr("b0:c5:5a:aa:bb:cc").unwrap();
-    assert_eq!(EMBEDDED_DB.search(mac),
-        None
-    );
+    assert_eq!(EMBEDDED_DB.search(mac), None);
 }

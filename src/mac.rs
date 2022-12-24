@@ -1,4 +1,3 @@
-
 use eui48::MacAddress;
 use smallstr::SmallString;
 
@@ -135,7 +134,7 @@ impl MacStyle {
     }
 
     #[inline(always)]
-    const fn offsets(&self) -> [(usize, usize); 2*6] {
+    const fn offsets(&self) -> [(usize, usize); 2 * 6] {
         match self {
             MacStyle::Plain => MacStyle::OFFSETS_NONE,
             MacStyle::Dashed => MacStyle::OFFSETS_BYTE,
@@ -148,7 +147,11 @@ impl MacStyle {
     }
 
     #[inline(always)]
-    pub(crate) const fn _format_mac<const UPPERCASE: bool>(eui64: u64, offsets: [(usize, usize); 12], mut arr: [u8; 25]) -> [u8; 25] {
+    pub(crate) const fn _format_mac<const UPPERCASE: bool>(
+        eui64: u64,
+        offsets: [(usize, usize); 12],
+        mut arr: [u8; 25],
+    ) -> [u8; 25] {
         let nibbles: [u8; 16] = if UPPERCASE {
             *b"0123456789ABCDEF"
         } else {
@@ -184,15 +187,14 @@ impl MacStyle {
         let fmtd_trimmed = &fmtd[..self.output_size()];
 
         let as_str = if cfg!(debug_assertions) {
-            std::str::from_utf8(fmtd_trimmed).expect("found invalid utf8 in formatted MAC address??")
+            std::str::from_utf8(fmtd_trimmed)
+                .expect("found invalid utf8 in formatted MAC address??")
         } else {
             // SAFETY:
             // All base strings are valid ascii/1-byte UTF8 codepoints
             // any modifications to the base strings are from a byte buffer of ascii (1-byte) characters
             // so any characters in the resulting fmtd string are 1-byte characters of valid UTF8
-            unsafe {
-                std::str::from_utf8_unchecked(fmtd_trimmed)
-            }
+            unsafe { std::str::from_utf8_unchecked(fmtd_trimmed) }
         };
         SmallString::from_str(as_str)
     }
@@ -206,8 +208,20 @@ pub fn format_mac_dashed(mac: MacAddress) -> SmallString<[u8; 25]> {
 fn style_formatting() {
     let mac = Oui::from_int(0x0000AABBCCDDEEFF).unwrap().as_mac();
     assert_eq!("aabbccddeeff", MacStyle::Plain.format(mac, false).as_str());
-    assert_eq!("aa-bb-cc-dd-ee-ff", MacStyle::Dashed.format(mac, false).as_str());
-    assert_eq!("a8bb:ccff:fedd:eeff", MacStyle::InterfaceId.format(mac, false).as_str());
-    assert_eq!("fe80::a8bb:ccff:fedd:eeff", MacStyle::LinkLocal.format(mac, false).as_str());
-    assert_eq!("FE80::A8BB:CCFF:FEDD:EEFF", MacStyle::LinkLocal.format(mac, true).as_str());
+    assert_eq!(
+        "aa-bb-cc-dd-ee-ff",
+        MacStyle::Dashed.format(mac, false).as_str()
+    );
+    assert_eq!(
+        "a8bb:ccff:fedd:eeff",
+        MacStyle::InterfaceId.format(mac, false).as_str()
+    );
+    assert_eq!(
+        "fe80::a8bb:ccff:fedd:eeff",
+        MacStyle::LinkLocal.format(mac, false).as_str()
+    );
+    assert_eq!(
+        "FE80::A8BB:CCFF:FEDD:EEFF",
+        MacStyle::LinkLocal.format(mac, true).as_str()
+    );
 }

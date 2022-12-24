@@ -1,6 +1,5 @@
-
-use std::ffi::CString;
 use rusqlite::{ffi, functions::FunctionFlags, Connection};
+use std::ffi::CString;
 
 /// Main collection of functions exported to SQLite. Also acts as documentation for those functions.
 pub mod exports;
@@ -28,7 +27,9 @@ pub mod oui;
 
 fn register_scalar_funcs(dbconn: &Connection) -> rusqlite::Result<()> {
     // All of our functions use UTF8 strings, are deterministic, and without side-effects.
-    let flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
+    let flags = FunctionFlags::SQLITE_UTF8
+        | FunctionFlags::SQLITE_DETERMINISTIC
+        | FunctionFlags::SQLITE_INNOCUOUS;
     dbconn.create_scalar_function("INSUBNET", 2, flags, exports::in_subnet)?;
     dbconn.create_scalar_function("INSUBNET", 3, flags, exports::in_subnet)?;
 
@@ -48,14 +49,16 @@ fn register_scalar_funcs(dbconn: &Connection) -> rusqlite::Result<()> {
 }
 
 #[no_mangle]
-unsafe extern "C" fn sqlite3_extension_init(db: *mut ffi::sqlite3, errmsg: *mut *mut std::ffi::c_char, p_api: *const ffi::sqlite3_api_routines) -> std::ffi::c_int {
+unsafe extern "C" fn sqlite3_extension_init(
+    db: *mut ffi::sqlite3,
+    errmsg: *mut *mut std::ffi::c_char,
+    p_api: *const ffi::sqlite3_api_routines,
+) -> std::ffi::c_int {
     rusqlite::ffi::loadable_extension_init(p_api as *mut ffi::sqlite3_api_routines);
     let dbconn = unsafe { rusqlite::Connection::from_handle(db).unwrap() };
 
     match register_scalar_funcs(&dbconn) {
-        Ok(()) => {
-            ffi::SQLITE_OK
-        },
+        Ok(()) => ffi::SQLITE_OK,
         Err(e) => {
             eprintln!("Unable to register extension functions for sqlite3-inet: {e}");
 
@@ -67,7 +70,11 @@ unsafe extern "C" fn sqlite3_extension_init(db: *mut ffi::sqlite3, errmsg: *mut 
                 "sqlite3_api contains null pointer for mprintf function"
             ));
 
-            *errmsg = (func)("Unable to register extension functions for sqlite3-inet: %s\0".as_ptr() as *const i8, upper_err.as_ptr() as *const i8);
+            *errmsg = (func)(
+                "Unable to register extension functions for sqlite3-inet: %s\0".as_ptr()
+                    as *const i8,
+                upper_err.as_ptr() as *const i8,
+            );
 
             // SQLITE should de-alloc the memory with sqlite3_free
             ffi::SQLITE_ERROR

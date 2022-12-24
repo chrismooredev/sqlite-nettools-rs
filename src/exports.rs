@@ -3,19 +3,22 @@ use std::{net::IpAddr, str::FromStr};
 use ipnet::IpNet;
 
 /// A collection of SQLite functions for dealing with MAC addresses, and their associated vendor affiliations (OUIs).
-/// 
+///
 /// Each function accepts MAC addresses in varying formats (though only the first is shown in example usages for brevity)
 /// * `aa-bb-cc-dd-ee-ff`
 /// * `aa:bb:cc:dd:ee:ff`
 /// * `aabb.ccdd.eeff`
 /// * `aabbccddeeff`
 /// * `0xaabbccddeeff`
-/// 
+///
 /// See the [MAC_FORMAT](crate::exports::mac::format) function to convert MAC addresses between known formats.
 pub mod mac {
     use smallstr::SmallString;
 
-    use crate::{oui::{OuiMeta, Oui}, mac::MacStyle};
+    use crate::{
+        mac::MacStyle,
+        oui::{Oui, OuiMeta},
+    };
 
     #[derive(thiserror::Error, Debug)]
     enum MacFormatError {
@@ -25,9 +28,13 @@ pub mod mac {
         BadFmtSpecifier(String),
     }
 
-    fn find_mac(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<(Oui, OuiMeta<&'static str>)>> {
+    fn find_mac(
+        ctx: &rusqlite::functions::Context<'_>,
+    ) -> rusqlite::Result<Option<(Oui, OuiMeta<&'static str>)>> {
         let Some(s) = ctx.get_raw(0).as_str_or_null()? else { return Ok(None); };
-        if s.is_empty() { return Ok(None); }
+        if s.is_empty() {
+            return Ok(None);
+        }
         let mac = crate::oui::parse_mac_addr(s)
             .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
 
@@ -36,19 +43,19 @@ pub mod mac {
 
     /// # MAC_FORMAT(mac, \[NULL|fmt]) -> mac'
     /// Formats a MAC address into a normalized form. Uses `hexstring` format by default.
-    /// 
+    ///
     /// The casing of the format string determines the casing of the output. Mixed-case output is not supported.
-    /// 
+    ///
     /// Note that prefixing the fmt string with a tilde `~` will make the function use the `hex` format
     /// when a format is not otherwise found. This can be used to prevent query errors for an invalid
     /// format type.
-    /// 
+    ///
     /// Prefixing the format string with an question mark `?` will make the function emit NULL on a bad MAC address.
     /// Similarly, this can be used to prevent a query error on a bad MAC address. This effectively allows the function
     /// to be used to validate a MAC address.
-    /// 
+    ///
     /// The format and MAC address validation flags `~`/`?` can be intermixed, and they can be repeated. (Additional flags have no effect)
-    /// 
+    ///
     /// # Usage
     /// |Call|Result|
     /// |-|-|
@@ -72,7 +79,10 @@ pub mod mac {
     pub fn format(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<String>> {
         let mac_str = ctx.get_raw(0).as_str()?;
 
-        let mut raw_fmt = (ctx.len() == 2).then(|| ctx.get_raw(1).as_str_or_null()).transpose()?.flatten();
+        let mut raw_fmt = (ctx.len() == 2)
+            .then(|| ctx.get_raw(1).as_str_or_null())
+            .transpose()?
+            .flatten();
         let mut has_upper = false;
         let mut use_default_on_bad_fmt = false;
         let mut ret_null_on_bad_mac = false;
@@ -91,7 +101,9 @@ pub mod mac {
             has_upper = fmt.contains(|c: char| c.is_ascii_uppercase());
             let has_lower = fmt.contains(|c: char| c.is_ascii_lowercase());
             if has_upper && has_lower && !use_default_on_bad_fmt {
-                return Err(rusqlite::Error::UserFunctionError(Box::new(MacFormatError::MixedCaseFmtSpecifier)));
+                return Err(rusqlite::Error::UserFunctionError(Box::new(
+                    MacFormatError::MixedCaseFmtSpecifier,
+                )));
             }
         }
 
@@ -108,7 +120,11 @@ pub mod mac {
                 "interface-id" => MacStyle::InterfaceId,
                 "link-local" => MacStyle::LinkLocal,
                 _ if use_default_on_bad_fmt => style, // passthru default
-                _ => return Err(rusqlite::Error::UserFunctionError(Box::new(MacFormatError::BadFmtSpecifier(raw_fmt.unwrap().to_string()))))
+                _ => {
+                    return Err(rusqlite::Error::UserFunctionError(Box::new(
+                        MacFormatError::BadFmtSpecifier(raw_fmt.unwrap().to_string()),
+                    )))
+                }
             };
         }
 
@@ -125,7 +141,7 @@ pub mod mac {
     /// Returns the lowercase prefix for the provided MAC address.
     /// Returns either the first three bits, or CIDR style when the prefix is longer than 24 bits.
     /// (ex: `2b:ce:7a` or `5e:a5:c3:80:00:00/28`)
-    /// 
+    ///
     /// # Usage:
     /// |Call|Result|
     /// |-|-|
@@ -139,7 +155,7 @@ pub mod mac {
 
     /// # MAC_MANUF(NULL|mac) -> NULL|manuf
     /// Returns the short manufacturer name belonging to this MAC's OUI
-    /// 
+    ///
     /// # Usage:
     /// |Call|Result|
     /// |-|-|
@@ -153,28 +169,32 @@ pub mod mac {
 
     /// # MAC_MANUFLONG(NULL|mac) -> NULL|manuf_long
     /// Returns the long manufacturer name belonging to this MAC's OUI
-    /// 
+    ///
     /// # Usage:
     /// |Call|Result|
     /// |-|-|
     /// |`MAC_MANUFLONG('3c-a6-f6-c4-34-f8')` | `'Apple, Inc.'`|
     /// |`MAC_MANUFLONG('8c-1c-da-82-4c-2e')` | `'Atol Llc'` |
     /// |`MAC_MANUFLONG('33-33-00-00-00-01')` |  `NULL`  |
-    pub fn manuf_long(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<&'static str>> {
+    pub fn manuf_long(
+        ctx: &rusqlite::functions::Context<'_>,
+    ) -> rusqlite::Result<Option<&'static str>> {
         let mac = find_mac(ctx)?;
         Ok(mac.and_then(|(_o, om)| om.manuf_long().copied()))
     }
 
     /// # MAC_COMMENT(NULL|mac) -> NULL|comment
     /// Returns the long manufacturer name belonging to this MAC's OUI
-    /// 
+    ///
     /// # Usage:
     /// |Call|Result|
     /// |-|-|
     /// |`MAC_COMMENT('3c-a6-f6-c4-34-f8')` | `NULL`|
     /// |`MAC_COMMENT('08-00-87-aa-bb-cc')` | `'terminal servers'`|
     /// |`MAC_COMMENT('33-33-00-00-00-01')` |  `NULL`  |
-    pub fn comment(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<&'static str>> {
+    pub fn comment(
+        ctx: &rusqlite::functions::Context<'_>,
+    ) -> rusqlite::Result<Option<&'static str>> {
         let mac = find_mac(ctx)?;
         Ok(mac.and_then(|(_o, om)| om.comment().copied()))
     }
@@ -190,46 +210,45 @@ pub mod mac {
             let mac = crate::oui::parse_mac_addr(&mac_str)
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
             Ok(Some(mac.$fname()))
-        }}
+        }};
     }
 
     /// # MAC_ISUNICAST(NULL|mac) -> NULL|BOOL
-    /// 
+    ///
     /// Returns true if bit 1 of Y is 0 in address `xY:xx:xx:xx:xx:xx`
     pub fn is_unicast(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<bool>> {
         gen_passthrough_body!(is_unicast, ctx)
     }
 
     /// # MAC_ISMULTICAST(NULL|mac) -> NULL|BOOL
-    /// 
+    ///
     ///  Returns true if bit 1 of Y is 1 in address `xY:xx:xx:xx:xx:xx`
     pub fn is_multicast(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<bool>> {
         gen_passthrough_body!(is_multicast, ctx)
     }
 
     /// # MAC_ISUNIVERSAL(NULL|mac) -> NULL|BOOL
-    /// 
+    ///
     /// Returns true if bit 2 of Y is 0 in address `xY:xx:xx:xx:xx:xx`
     pub fn is_universal(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<bool>> {
         gen_passthrough_body!(is_universal, ctx)
     }
 
     /// # MAC_ISLOCAL(NULL|mac) -> NULL|BOOL
-    /// 
+    ///
     /// Returns true if bit 2 of Y is 1 in address `xY:xx:xx:xx:xx:xx`
     pub fn is_local(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<Option<bool>> {
         gen_passthrough_body!(is_local, ctx)
     }
 }
 
-
-
 pub fn in_subnet(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<bool> {
     let args = ctx.len();
     // (ip, network, subnetmask) -> bool
     // (ip, cidr) -> bool
     let ipaddr_raw: String = ctx.get(0).unwrap();
-    let ipaddr: IpAddr = ipaddr_raw.parse()
+    let ipaddr: IpAddr = ipaddr_raw
+        .parse()
         .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
 
     let network = match args {
@@ -237,18 +256,20 @@ pub fn in_subnet(ctx: &rusqlite::functions::Context<'_>) -> rusqlite::Result<boo
             let network_raw: String = ctx.get(1).unwrap();
             ipnet::IpNet::from_str(&network_raw)
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
-        },
+        }
         3 => {
             let netaddr_raw: String = ctx.get(1).unwrap();
-            let netaddr: IpAddr = netaddr_raw.parse()
+            let netaddr: IpAddr = netaddr_raw
+                .parse()
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
             let netmask_raw: String = ctx.get(2).unwrap();
-            let netmask: IpAddr = netmask_raw.parse()
+            let netmask: IpAddr = netmask_raw
+                .parse()
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
             IpNet::with_netmask(netaddr, netmask)
                 .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
-        },
-        n => unreachable!("we only register 2 and 3 arg variants - got {} args", n)
+        }
+        n => unreachable!("we only register 2 and 3 arg variants - got {} args", n),
     };
 
     Ok(network?.contains(&ipaddr))
