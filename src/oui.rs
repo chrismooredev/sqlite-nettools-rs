@@ -1,4 +1,4 @@
-use std::{fmt, num::ParseIntError, str::FromStr};
+use std::{fmt, num::ParseIntError, str::FromStr, borrow::Cow};
 
 // The default rust 'oui' crate doesn't search efficiently, and we can't use it memory-optimized ways.
 //
@@ -71,13 +71,13 @@ pub struct OuiMeta<S> {
     comment: Option<S>,
 }
 impl<S> OuiMeta<S> {
-    pub fn manuf(&self) -> &S {
+    pub const fn manuf(&self) -> &S {
         &self.short
     }
-    pub fn manuf_long(&self) -> Option<&S> {
+    pub const fn manuf_long(&self) -> Option<&S> {
         self.long.as_ref()
     }
-    pub fn comment(&self) -> Option<&S> {
+    pub const fn comment(&self) -> Option<&S> {
         self.comment.as_ref()
     }
 }
@@ -107,7 +107,7 @@ pub enum ParseOuiError {
     #[error("Unable to parse prefix length from OUI string {1:?}")]
     PrefixLengthParsing(#[source] ParseIntError, String),
     #[error("Parsed an invalid OUI prefix length. Expected values are within range [24, 48]. Got {1} from source prefix {0:?}")]
-    PrefixLengthValue(u8, String),
+    PrefixLengthValue(u8, Cow<'static, str>),
     #[error("Attempted to create an OUI/MAC address from a 64-bit integer, but value was out of range. Got 0x{0:>016x}")]
     InvalidIntegerValue(u64),
 }
@@ -118,17 +118,37 @@ pub struct Oui {
     length: u8,
 }
 impl Oui {
-    pub fn as_mac(self) -> MacAddress {
+    pub const fn as_mac(self) -> MacAddress {
         let mac_raw_long = u64::to_be_bytes(self.address);
         let mut mac_raw = [0u8; 6];
-        mac_raw.copy_from_slice(&mac_raw_long[2..]);
+        mac_raw[0] = mac_raw_long[2];
+        mac_raw[1] = mac_raw_long[3];
+        mac_raw[2] = mac_raw_long[4];
+        mac_raw[3] = mac_raw_long[5];
+        mac_raw[4] = mac_raw_long[6];
+        mac_raw[5] = mac_raw_long[7];
+
+        // copy_from_slice is not const
+        // mac_raw.copy_from_slice(&mac_raw_long[2..]);
+
         MacAddress::new(mac_raw)
     }
-    pub fn mask(&self) -> u64 {
+    pub const fn mask(&self) -> u64 {
         ((1 << self.length) - 1) << (8 * EUI48LEN - self.length as usize)
     }
+    pub const fn length(&self) -> u8 {
+        self.length
+    }
+    pub const fn with_length(&self, len: u8) -> Result<Oui, ParseOuiError> {
+        if len > 48 {
+            return Err(ParseOuiError::PrefixLengthValue(len, Cow::Borrowed("Oui::set_length")));
+        }
+        let mut local = *self;
+        local.length = len;
+        Ok(local)
+    }
 
-    pub fn contains(&self, other: &Oui) -> bool {
+    pub const fn contains(&self, other: &Oui) -> bool {
         // eprintln!("Oui::contains({:?}, {:?} (self mask: {:b}))", self, other, self.mask());
         if self.length > other.length {
             return false;
@@ -136,28 +156,44 @@ impl Oui {
         other.address & self.mask() == self.address
     }
 
-    pub fn from_addr(mac: MacAddress) -> Oui {
-        let mut mac_bytes = [0u8; 8];
-        mac_bytes[2..].copy_from_slice(mac.as_bytes());
-        let mac_int = u64::from_be_bytes(mac_bytes);
-        // eprintln!("\n[src/oui.rs:62] mac={:?}, mac_bytes={:?}, mac_int={:>012x}", mac_bytes, mac, mac_int);
+    /// Creates an OUI with length of 48 from an array of bytes. The last byte of the MAC should be the first byte in the array.
+    /// 
+    /// In other words:
+    /// `"AA-BB-CC-DD-EE-FF"` is `0x0000AABBCCDDEEFF` is `[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]`
+    pub const fn from_array(mac: [u8; 6]) -> Oui {
+        // there is currently no way to const-ly retrieve MAC bytes from a eui48::MacAddress
+
+        let mut mac_bytes_u64 = [0u8; 8];
+
+        mac_bytes_u64[2] = mac[0];
+        mac_bytes_u64[3] = mac[1];
+        mac_bytes_u64[4] = mac[2];
+        mac_bytes_u64[5] = mac[3];
+        mac_bytes_u64[6] = mac[4];
+        mac_bytes_u64[7] = mac[5];
+
+        let mac_int = u64::from_be_bytes(mac_bytes_u64);
         Oui {
             address: mac_int,
             length: 48,
         }
     }
+    pub fn from_addr(mac: MacAddress) -> Oui {
+        // MacAddress::as_bytes() is not const
+        Oui::from_array(mac.as_bytes().try_into().unwrap())
+    }
 
     /// Returns the MAC address as a u64.
     ///
     /// This places the address in the least significant digits: `aa:bb:cc:dd:ee:ff` would be `0x0000aabbccddeeff`
-    pub fn as_int(&self) -> u64 {
+    pub const fn as_int(&self) -> u64 {
         self.address
     }
 
     /// Converts a 64-bit integer into a structured OUI with a length of 48 bits.
     ///
     /// Returns Err(ParseOuiError::InvalidIntegerValue(_)) if the address is over 0x0000FFFF_FFFFFF
-    pub fn from_int(address: u64) -> Result<Oui, ParseOuiError> {
+    pub const fn from_int(address: u64) -> Result<Oui, ParseOuiError> {
         if address > 0x0000_FFFF_FFFF_FFFF {
             return Err(ParseOuiError::InvalidIntegerValue(address));
         }
@@ -180,17 +216,12 @@ impl FromStr for Oui {
         };
 
         if !(24..=48).contains(&length) {
-            return Err(ParseOuiError::PrefixLengthValue(length, s.to_owned()));
+            return Err(ParseOuiError::PrefixLengthValue(length, Cow::from(s.to_owned())));
         }
 
         let oui_mac = parse_mac_addr_extend(oui, true).unwrap();
         let mut address = Oui::from_addr(oui_mac);
         address.length = length;
-
-        // if dbg {
-        //     // eprintln!("[{:?}] macstr={:?}, length={}, mac_int={:>012x}", s, macstr, length, mac_int);
-        //     eprintln!("[{:?}] oui={:?}, length={}", s, address, length);
-        // }
 
         Ok(address)
     }

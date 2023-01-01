@@ -3,7 +3,7 @@ use smallstr::SmallString;
 
 use crate::oui::Oui;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum MacStyle {
     Plain,
     Dashed,
@@ -13,7 +13,26 @@ pub enum MacStyle {
     InterfaceId,
     LinkLocal,
 }
+
+struct StyleDescription {
+    base: [u8; 25],
+    length: usize,
+    offsets: [usize; 12],
+}
+
+macro_rules! style_desc {
+    ($style: ident, $base: ident, $len: expr, $offset: ident) => {
+        (MacStyle::$style, StyleDescription {
+            base: MacStyle::$base,
+            length: $len,
+            offsets: MacStyle::$offset,
+        })
+    }
+}
+
 impl MacStyle {
+    const NIBBLE_IDXS: [usize; 12] = [0x2c, 0x28, 0x24, 0x20, 0x1c, 0x18, 0x14, 0x10, 0x0c, 0x08, 0x04, 0x00];
+
     const BASE_PLAIN:      [u8; 25] = *b"############@@@@@@@@@@@@@";
     const BASE_DASHED:     [u8; 25] = *b"##-##-##-##-##-##@@@@@@@@";
     const BASE_COLON:      [u8; 25] = *b"##:##:##:##:##:##@@@@@@@@";
@@ -22,134 +41,52 @@ impl MacStyle {
     const BASE_INTF_ID:    [u8; 25] = *b"####:##ff:fe##:####@@@@@@";
     const BASE_LINK_LOCAL: [u8; 25] = *b"fe80::####:##ff:fe##:####";
 
-    const OFFSETS_NONE: [(usize, usize); 2*6] = [
-        ( 0, 0x2c),
-        ( 1, 0x28),
-        ( 2, 0x24),
-        ( 3, 0x20),
-        ( 4, 0x1c),
-        ( 5, 0x18),
-        ( 6, 0x14),
-        ( 7, 0x10),
-        ( 8, 0x0c),
-        ( 9, 0x08),
-        (10, 0x04),
-        (11, 0x00),
-    ];
-    const OFFSETS_NONE_PREFIXED: [(usize, usize); 2*6] = [
-        ( 2, 0x2c),
-        ( 3, 0x28),
-        ( 4, 0x24),
-        ( 5, 0x20),
-        ( 6, 0x1c),
-        ( 7, 0x18),
-        ( 8, 0x14),
-        ( 9, 0x10),
-        (10, 0x0c),
-        (11, 0x08),
-        (12, 0x04),
-        (13, 0x00),
-    ];
-    const OFFSETS_BYTE: [(usize, usize); 2*6] = [
-        ( 0, 0x2c),
-        ( 1, 0x28),
-        ( 3, 0x24),
-        ( 4, 0x20),
-        ( 6, 0x1c),
-        ( 7, 0x18),
-        ( 9, 0x14),
-        (10, 0x10),
-        (12, 0x0c),
-        (13, 0x08),
-        (15, 0x04),
-        (16, 0x00),
-    ];
-    const OFFSETS_SHORT: [(usize, usize); 2*6] = [
-        ( 0, 0x2c),
-        ( 1, 0x28),
-        ( 2, 0x24),
-        ( 3, 0x20),
-        ( 5, 0x1c),
-        ( 6, 0x18),
-        ( 7, 0x14),
-        ( 8, 0x10),
-        (10, 0x0c),
-        (11, 0x08),
-        (12, 0x04),
-        (13, 0x00),
-    ];
-    const OFFSETS_INTF_ID: [(usize, usize); 2*6] = [
-        ( 0, 0x2c),
-        ( 1, 0x28),
-        ( 2, 0x24),
-        ( 3, 0x20),
-        ( 5, 0x1c),
-        ( 6, 0x18),
-        (12, 0x14),
-        (13, 0x10),
-        (15, 0x0c),
-        (16, 0x08),
-        (17, 0x04),
-        (18, 0x00),
-    ];
-    const OFFSETS_LINK_LOCAL: [(usize, usize); 2*6] = [
-        ( 6, 0x2c),
-        ( 7, 0x28),
-        ( 8, 0x24),
-        ( 9, 0x20),
-        (11, 0x1c),
-        (12, 0x18),
-        (18, 0x14),
-        (19, 0x10),
-        (21, 0x0c),
-        (22, 0x08),
-        (23, 0x04),
-        (24, 0x00),
+    const OFFSETS_NONE: [usize; 2*6] = [0,1,2,3,4,5,6,7,8,9,10,11];
+    const OFFSETS_NONE_PREFIXED: [usize; 2*6] = [2,3,4,5,6,7,8,9,10,11,12,13];
+    const OFFSETS_BYTE: [usize; 2*6] = [0,1,3,4,6,7,9,10,12,13,15,16];
+    const OFFSETS_SHORT: [usize; 2*6] = [0,1,2,3,5,6,7,8,10,11,12,13];
+    const OFFSETS_INTF_ID: [usize; 2*6] = [0,1,2,3,5,6,12,13,15,16,17,18];
+    const OFFSETS_LINK_LOCAL: [usize; 2*6] = [6,7,8,9,11,12,18,19,21,22,23,24];
+
+    const FMT_TABLE: &'static [(MacStyle, StyleDescription)] = &[
+        style_desc!(Plain, BASE_PLAIN, 12, OFFSETS_NONE),
+        style_desc!(Dashed, BASE_DASHED, 17, OFFSETS_BYTE),
+        style_desc!(Colon, BASE_COLON, 17, OFFSETS_BYTE),
+        style_desc!(Dots, BASE_DOTS, 14, OFFSETS_SHORT),
+        style_desc!(Prefixed, BASE_PREFIXED, 14, OFFSETS_NONE_PREFIXED),
+        style_desc!(InterfaceId, BASE_INTF_ID, 19, OFFSETS_INTF_ID),
+        style_desc!(LinkLocal, BASE_LINK_LOCAL, 25, OFFSETS_LINK_LOCAL),
     ];
 
     #[inline(always)]
-    const fn output_size(&self) -> usize {
+    const fn fmt_desc(&self) -> &'static StyleDescription {
         match self {
-            MacStyle::Plain => 12,
-            MacStyle::Dashed => 17,
-            MacStyle::Colon => 17,
-            MacStyle::Dots => 14,
-            MacStyle::Prefixed => 14,
-            MacStyle::InterfaceId => 19,
-            MacStyle::LinkLocal => 25,
+            MacStyle::Plain => &MacStyle::FMT_TABLE[0].1,
+            MacStyle::Dashed => &MacStyle::FMT_TABLE[1].1,
+            MacStyle::Colon => &MacStyle::FMT_TABLE[2].1,
+            MacStyle::Dots => &MacStyle::FMT_TABLE[3].1,
+            MacStyle::Prefixed => &MacStyle::FMT_TABLE[4].1,
+            MacStyle::InterfaceId => &MacStyle::FMT_TABLE[5].1,
+            MacStyle::LinkLocal => &MacStyle::FMT_TABLE[6].1,
         }
     }
 
+    /// The length of a MAC address when serialized into a string
     #[inline(always)]
-    const fn base(&self) -> [u8; 25] {
-        match self {
-            MacStyle::Plain => MacStyle::BASE_PLAIN,
-            MacStyle::Dashed => MacStyle::BASE_DASHED,
-            MacStyle::Colon => MacStyle::BASE_COLON,
-            MacStyle::Dots => MacStyle::BASE_DOTS,
-            MacStyle::Prefixed => MacStyle::BASE_PREFIXED,
-            MacStyle::InterfaceId => MacStyle::BASE_INTF_ID,
-            MacStyle::LinkLocal => MacStyle::BASE_LINK_LOCAL,
-        }
+    pub const fn length(&self) -> usize {
+        self.fmt_desc().length
     }
 
+    /// A template string of a MAC address. Only the first `MacStyle::length()` bytes will be used, the rest is padding.
     #[inline(always)]
-    const fn offsets(&self) -> [(usize, usize); 2 * 6] {
-        match self {
-            MacStyle::Plain => MacStyle::OFFSETS_NONE,
-            MacStyle::Dashed => MacStyle::OFFSETS_BYTE,
-            MacStyle::Colon => MacStyle::OFFSETS_BYTE,
-            MacStyle::Dots => MacStyle::OFFSETS_SHORT,
-            MacStyle::Prefixed => MacStyle::OFFSETS_NONE_PREFIXED,
-            MacStyle::InterfaceId => MacStyle::OFFSETS_INTF_ID,
-            MacStyle::LinkLocal => MacStyle::OFFSETS_LINK_LOCAL,
-        }
+    pub const fn base(&self) -> [u8; 25] {
+        self.fmt_desc().base
     }
 
     #[inline(always)]
     pub(crate) const fn _format_mac<const UPPERCASE: bool>(
         eui64: u64,
-        offsets: [(usize, usize); 12],
+        offsets: [usize; 12],
         mut arr: [u8; 25],
     ) -> [u8; 25] {
         let nibbles: [u8; 16] = if UPPERCASE {
@@ -160,35 +97,25 @@ impl MacStyle {
         let eui = eui64 as usize;
         let mut i = 0;
         while i < offsets.len() {
-            let (ind, off) = offsets[i];
+            let ind = offsets[i];
+            let off = MacStyle::NIBBLE_IDXS[i];
             arr[ind] = nibbles[(eui >> off) & 0xf];
             i += 1;
         }
         arr
     }
 
-    #[inline(always)]
+    /// Formats a MAC address into a small string of at most 25 bytes.
     pub fn format(&self, mac: MacAddress, uppercase: bool) -> SmallString<[u8; 25]> {
-        let mut as_u64 = Oui::from_addr(mac).as_int();
-        if matches!(self, MacStyle::InterfaceId | MacStyle::LinkLocal) {
-            as_u64 ^= 0x0000_0200_0000_0000;
-        }
+        let (fmtd, len) = self.format_internal(mac.as_bytes().try_into().unwrap(), uppercase);
 
-        let mut fmtd = match uppercase {
-            true  => MacStyle::_format_mac::<true >(as_u64, self.offsets(), self.base()),
-            false => MacStyle::_format_mac::<false>(as_u64, self.offsets(), self.base()),
-        };
-
-        if uppercase && matches!(self, MacStyle::InterfaceId | MacStyle::LinkLocal) {
-            // ensure the fe80:: prefix and ff:fe internal bytes are capitalized
-            fmtd.make_ascii_uppercase();
-        }
-
-        let fmtd_trimmed = &fmtd[..self.output_size()];
+        let fmtd_trimmed = &fmtd[..len];
 
         let as_str = if cfg!(debug_assertions) {
-            std::str::from_utf8(fmtd_trimmed)
-                .expect("found invalid utf8 in formatted MAC address??")
+            match std::str::from_utf8(fmtd_trimmed) {
+                Ok(s) => s,
+                Err(e) => panic!("found invalid utf8 in freshly formatted MAC address: {:?}", e),
+            }
         } else {
             // SAFETY:
             // All base strings are valid ascii/1-byte UTF8 codepoints
@@ -196,7 +123,54 @@ impl MacStyle {
             // so any characters in the resulting fmtd string are 1-byte characters of valid UTF8
             unsafe { std::str::from_utf8_unchecked(fmtd_trimmed) }
         };
+
+        // waiting for any kind of const support from SmallString
         SmallString::from_str(as_str)
+    }
+
+    /// An const version of `MacStyle::format`. Returns a byte buffer, with a string length.
+    /// 
+    /// For use in a const context, the function omits:
+    /// - Trimming output to formatted length: see `MacStyle::length`, or the second value in the returned tuple
+    /// - UTF8 validity: While the trimmed output should always be UTF8, it is not checked in this function.
+    /// 
+    /// # Example
+    /// ```
+    /// # use sqlite3_nettools::mac::MacStyle;
+    /// let style = MacStyle::Colon;
+    /// let (raw, len) = style.format_internal([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF], false);
+    /// let trimmed = &raw[..len];
+    /// assert_eq!(trimmed, b"aa:bb:cc:dd:ee:ff");
+    /// # assert_eq!(style.length(), len);
+    /// ```
+    #[inline(always)]
+    pub const fn format_internal(&self, mac: [u8; 6], uppercase: bool) -> ([u8; 25], usize) {
+        let mut as_u64 = Oui::from_array(mac).as_int();
+        if matches!(self, MacStyle::InterfaceId | MacStyle::LinkLocal) {
+            as_u64 ^= 0x0000_0200_0000_0000;
+        }
+
+        let style = self.fmt_desc();
+        let mut fmtd = match uppercase {
+            true  => MacStyle::_format_mac::<true >(as_u64, style.offsets, style.base),
+            false => MacStyle::_format_mac::<false>(as_u64, style.offsets, style.base),
+        };
+
+        if uppercase && matches!(self, MacStyle::InterfaceId | MacStyle::LinkLocal) {
+            // ensure the fe80:: prefix and ff:fe internal bytes are capitalized
+            let mut i = 0;
+            while i < fmtd.len() {
+                if fmtd[i].is_ascii_lowercase() {
+                    fmtd[i] = fmtd[i].to_ascii_uppercase();
+                }
+                i += 1;
+            }
+
+            // above version is const
+            // fmtd.make_ascii_uppercase();
+        }
+
+        (fmtd, style.length)
     }
 }
 
