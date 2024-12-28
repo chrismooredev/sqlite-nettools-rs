@@ -8,7 +8,8 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-crate-type = ["cdylib"]
+# the rlib is purely for criterion - sqlite uses cdylib
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ipnet = "2.7.0"
@@ -16,6 +17,15 @@ lazy_static = "1.4.0"
 eui48 = "1.1.0"
 thiserror = "1.0"
 smallstr = "0.3.0"
+
+# rusqlite = { version = "0.32.1", features = [
+#     "loadable_extension",
+#     "vtab",
+#     "functions",
+#     "bundled",
+#     "modern_sqlite",
+#     "buildtime_bindgen",
+# ] }
 
 # main rusqlite project doesn't yet have support for authoring loadable extensions
 [dependencies.rusqlite]
@@ -34,3 +44,10 @@ features = [
 
 [build-dependencies]
 ureq = "2.5.0"
+
+[dev-dependencies]
+criterion = { version = "0.4", features=["real_blackbox"] }
+
+[[bench]]
+name = "my_benchmark"
+harness = false
