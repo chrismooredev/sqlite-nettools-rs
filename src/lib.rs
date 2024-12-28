@@ -1,7 +1,10 @@
+
 use rusqlite::{ffi, functions::FunctionFlags, Connection};
 use std::ffi::CString;
 
 /// Main collection of functions exported to SQLite. Also acts as documentation for those functions.
+///
+/// Functions will short-circuit on to return NULL if any non-optional arguments are NULL.
 pub mod exports;
 
 /// Non-alloc MAC address formatting
@@ -30,8 +33,8 @@ fn register_scalar_funcs(dbconn: &Connection) -> rusqlite::Result<()> {
     let flags = FunctionFlags::SQLITE_UTF8
         | FunctionFlags::SQLITE_DETERMINISTIC
         | FunctionFlags::SQLITE_INNOCUOUS;
-    dbconn.create_scalar_function("INSUBNET", 2, flags, exports::in_subnet)?;
-    dbconn.create_scalar_function("INSUBNET", 3, flags, exports::in_subnet)?;
+    // dbconn.create_scalar_function("INSUBNET", 2, flags, exports::in_subnet)?;
+    // dbconn.create_scalar_function("INSUBNET", 3, flags, exports::in_subnet)?;
 
     dbconn.create_scalar_function("MAC_FORMAT",      1, flags, exports::mac::format)?;
     dbconn.create_scalar_function("MAC_FORMAT",      2, flags, exports::mac::format)?;
@@ -43,6 +46,16 @@ fn register_scalar_funcs(dbconn: &Connection) -> rusqlite::Result<()> {
     dbconn.create_scalar_function("MAC_ISMULTICAST", 1, flags, exports::mac::is_multicast)?;
     dbconn.create_scalar_function("MAC_ISUNIVERSAL", 1, flags, exports::mac::is_universal)?;
     dbconn.create_scalar_function("MAC_ISLOCAL",     1, flags, exports::mac::is_local)?;
+
+    dbconn.create_scalar_function("IP_FORMAT",     1, flags, exports::inet::format)?;
+    dbconn.create_scalar_function("IP_FORMAT",     2, flags, exports::inet::format)?;
+    dbconn.create_scalar_function("IP_CONTAINS",   2, flags, exports::inet::contains)?;
+    dbconn.create_scalar_function("IP_CONTAINS",   3, flags, exports::inet::contains)?;
+    dbconn.create_scalar_function("IP_BLOBIFY",      1, flags, exports::inet::blobify)?;
+
+    // supernet-address
+    // - takes many IP addresses, and returns the address above them
+    // dbconn.create_aggregate_function(fn_name, n_arg, flags, aggr)
 
     // eprintln!("scalar funcs: done");
     Ok(())
