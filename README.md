@@ -4,8 +4,9 @@ A rusty SQLite3 extension providing MAC ~~and IP address~~ (WIP) utilities. Theo
 Inspired by the existing, C-based (`sqlite3-inet` project ran by mobigroup)[https://github.com/mobigroup/sqlite3-inet].
 
 # Build Instructions
-Set two environment variables:
-`SQLITE3_INCLUDE_DIR=sqlite3`
-`SQLITE3_LIB_DIR=sqlite3`
+Set two environment variables for the build command. On unix systems:
+```sh
+SQLITE3_INCLUDE_DIR=sqlite3 SQLITE3_LIB_DIR=sqlite3 cargo build
+```
 
-Run `cargo build`. Release build recommended when building the final library for SQLite's use. Debug mode has some significant performance penaltys.
+Run `cargo build`. Release build recommended when building the final library for SQLite's use. Debug mode has some significant performance penalties.
